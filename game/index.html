@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dustfall Line — a three.js tactical FPS</title>
+<style>
+  :root {
+    --canvas: #191512;
+    --surface: #262019;
+    --hairline: #3d332a;
+    --ink: #efe8dc;
+    --muted: #a89a85;
+    --accent: #35c4a8;
+    --ember: #e0562e;
+    --sand: #c8a06a;
+    --rust: #a35d33;
+    --dusk: #2a2622;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--canvas); }
+  body { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--ink); }
+  #game { display: block; width: 100%; height: 100%; }
+  #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+
+  .topbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #timer { font-size: 30px; font-weight: 700; letter-spacing: 2px; text-shadow: 0 2px 8px #000; }
+  #timer.urgent { color: var(--ember); }
+  #score { font-size: 13px; color: var(--muted); margin-top: 2px; text-shadow: 0 1px 4px #000; }
+  #alive { font-size: 12px; color: var(--ink); margin-top: 2px; text-shadow: 0 1px 4px #000; }
+  #objective { font-size: 12px; color: var(--accent); margin-top: 6px; text-shadow: 0 1px 4px #000; }
+
+  #killfeed { position: absolute; top: 14px; right: 16px; text-align: right; font-size: 13px; }
+  .feed-line { margin-bottom: 4px; text-shadow: 0 1px 4px #000; }
+  .feed-line.me span:first-child { color: var(--accent); }
+  .feed-skull { color: var(--ember); margin: 0 6px; }
+
+  #banner { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); font-size: 26px; font-weight: 700; letter-spacing: 1px; color: var(--ink); text-shadow: 0 2px 12px #000; opacity: 0; transition: opacity .2s; text-align: center; white-space: nowrap; }
+  #banner.show { opacity: 1; }
+  #message { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); font-size: 14px; color: var(--sand); text-shadow: 0 1px 6px #000; text-align: center; }
+
+  .bottom-left { position: absolute; left: 18px; bottom: 18px; width: 240px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+  .bar { flex: 1; height: 10px; background: var(--hairline); border: 1px solid #000; }
+  .bar > div { height: 100%; }
+  #health-fill { background: var(--accent); width: 100%; }
+  #armor-fill { background: var(--sand); width: 0; }
+  #money { font-size: 20px; font-weight: 700; color: var(--sand); text-shadow: 0 1px 4px #000; }
+  #frags { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .bottom-right { position: absolute; right: 18px; bottom: 18px; text-align: right; }
+  #ammo { font-size: 30px; font-weight: 700; text-shadow: 0 2px 8px #000; }
+  #weapon-name { font-size: 13px; color: var(--muted); }
+
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; --spread: 6px; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: var(--ink); box-shadow: 0 0 3px #000; }
+  #crosshair::before { width: 2px; height: calc(var(--spread) * 2 + 8px); left: -1px; top: calc(-1 * var(--spread) - 4px); clip-path: polygon(0 0, 100% 0, 100% 32%, 0 32%, 0 68%, 100% 68%, 100% 100%, 0 100%); }
+  #crosshair::after { height: 2px; width: calc(var(--spread) * 2 + 8px); top: -1px; left: calc(-1 * var(--spread) - 4px); clip-path: polygon(0 0, 32% 0, 32% 100%, 68% 100%, 68% 0, 100% 0, 100% 100%, 0 100%); }
+  #crosshair.ads { opacity: 0.35; }
+  #hitmarker { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; opacity: 0; }
+  #hitmarker::before, #hitmarker::after { content: ""; position: absolute; left: 12px; top: 0; width: 2px; height: 26px; background: var(--ink); }
+  #hitmarker::before { transform: rotate(45deg); }
+  #hitmarker::after { transform: rotate(-45deg); }
+  #hitmarker.show { opacity: 1; }
+  #hitmarker.kill::before, #hitmarker.kill::after { background: var(--ember); }
+
+  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(224, 86, 46, 0.55) 100%); opacity: 0; }
+
+  #channel { position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); width: 280px; text-align: center; display: none; }
+  #channel.show { display: block; }
+  #channel-label { font-size: 13px; margin-bottom: 6px; text-shadow: 0 1px 4px #000; }
+  #channel .bar { height: 8px; }
+  #channel-fill { background: var(--accent); width: 0; }
+
+  #buy-menu { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 520px; max-width: 92vw; background: rgba(38, 32, 25, 0.96); border: 1px solid var(--hairline); padding: 18px 20px; display: none; pointer-events: auto; }
+  #buy-menu.show { display: block; }
+  #buy-menu h2 { font-size: 16px; letter-spacing: 1px; margin-bottom: 4px; }
+  #buy-money { font-size: 14px; color: var(--sand); margin-bottom: 12px; }
+  .buy-item { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 1px solid transparent; color: var(--ink); font: inherit; font-size: 14px; text-align: left; padding: 8px 10px; cursor: pointer; }
+  .buy-item:hover { border-color: var(--accent); background: rgba(53, 196, 168, 0.08); }
+  .buy-item.owned { opacity: 0.55; }
+  .buy-item.poor { opacity: 0.45; }
+  .buy-key { display: inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align: center; border: 1px solid var(--hairline); color: var(--muted); font-size: 12px; }
+  .buy-label { flex: 1; }
+  .buy-price { color: var(--sand); }
+
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(25, 21, 18, 0.82); text-align: center; padding: 24px; z-index: 10; }
+  .overlay.hidden { display: none; }
+  .overlay h1 { font-size: 44px; letter-spacing: 4px; color: var(--ink); }
+  .overlay h1 em { font-style: normal; color: var(--accent); }
+  .overlay h2 { font-size: 30px; letter-spacing: 2px; }
+  .overlay p { max-width: 620px; margin-top: 14px; font-size: 15px; line-height: 1.6; color: var(--muted); }
+  .overlay .cta { margin-top: 22px; font-size: 16px; color: var(--accent); letter-spacing: 1px; }
+  .overlay .keys { margin-top: 18px; font-size: 13px; line-height: 1.9; color: var(--ink); }
+  .overlay .keys b { color: var(--sand); }
+  #end-screen { display: none; }
+  #end-screen.show { display: flex; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="vignette"></div>
+  <div class="topbar">
+    <div id="timer">15s</div>
+    <div id="score">Vanguard 0 — 0 Dustjacks · Round 1/9</div>
+    <div id="alive">Alive — Vanguard 4 · Dustjacks 4</div>
+    <div id="objective">Buy phase — B opens the buy menu</div>
+  </div>
+  <div id="killfeed"></div>
+  <div id="banner"></div>
+  <div id="message"></div>
+  <div id="crosshair"></div>
+  <div id="hitmarker"></div>
+  <div class="bottom-left">
+    <div class="bar-row"><span>HP</span><div class="bar"><div id="health-fill"></div></div><span id="health-text">100</span></div>
+    <div class="bar-row"><span>AR</span><div class="bar"><div id="armor-fill"></div></div><span id="armor-text">0</span></div>
+    <div id="money">$800</div>
+    <div id="frags"></div>
+  </div>
+  <div class="bottom-right">
+    <div id="ammo">12 / 48</div>
+    <div id="weapon-name">Sidewinder P9</div>
+  </div>
+  <div id="channel">
+    <div id="channel-label">Planting the charge…</div>
+    <div class="bar"><div id="channel-fill"></div></div>
+  </div>
+  <div id="buy-menu">
+    <h2>BUY MENU</h2>
+    <div id="buy-money">Money: $800</div>
+    <div id="buy-items"></div>
+  </div>
+</div>
+
+<div id="title-screen" class="overlay">
+  <h1>DUSTFALL <em>LINE</em></h1>
+  <p>A round-based tactical FPS. You are Vanguard — four agents against four Dustjacks on a
+  desert-industrial yard. Take the Relay at the north end: eliminate the Dustjacks, or plant
+  the charge and hold it for thirty seconds. Money from kills and rounds buys rifles, armour
+  and grenades. First to five rounds takes the yard.</p>
+  <div class="cta">Click to play</div>
+  <div class="keys">
+    <b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>Left click</b> fire &nbsp;·&nbsp; <b>Right click</b> aim<br>
+    <b>R</b> reload &nbsp;·&nbsp; <b>G</b> grenade &nbsp;·&nbsp; <b>E</b> hold to plant &nbsp;·&nbsp; <b>B</b> buy menu &nbsp;·&nbsp; <b>1–4</b> weapons<br>
+    <b>Space</b> jump &nbsp;·&nbsp; <b>Ctrl / C</b> crouch
+  </div>
+</div>
+
+<div id="end-screen" class="overlay">
+  <h2></h2>
+  <p></p>
+  <div class="cta">Press R to play again</div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
